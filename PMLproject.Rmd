@@ -1,0 +1,87 @@
+---
+title: "Prediction of Dumbbell Lift Quality from Accelerometer Data"
+author: "DTN Chen"
+output: html_document
+---
+## Executive Summary
+In this report, I explore the use of machine learning in the Caret package of R to predict the quality of a dumbbell lifting exercise from accelerometer data. The goal is to apply machine learning algorithms to predict the quality of the exercise based on accelerometer data of a group of 6 anonymized test subjects.  First, I cleaned up the training and test datasets, removing unnecessary variables as well as predictors which are mostly NAs. Next I used a 'hold-out' validation set approach by randomly splitting the training set into a reduced training set for training a machine learning algorithm and a hold-out validation set to validate the results of the prediction model. After trying several methods including classification trees, PCA, boosting, and random forest, I found random forest gave the best performance on the validation set. Using fivefold cross-validation on the reduced training set to estimate out-of-sample error, the random forest model yielded an out-of-bag error rate of 1.19% within the reduced training data set. Applying the random forest prediction model to the validation data set yielded a 100% prediction accuracy.  
+
+```{r load packages,results='hide',include=TRUE}
+library(caret);library(MASS);
+```
+
+## Data Loading and Cleaning
+Load the training and testing data. Remove first 7 columns which contain irrelevant information such as index variable, time and datestamps, and subject name. Then I drop the accelerometer variables that are mostly NA's. 
+
+```{r load data,echo=TRUE, cache=TRUE, results='hide',include=TRUE}
+training <-read.csv("pml-training.csv",na.strings=c("NA",""))
+testing <-read.csv("pml-testing.csv",na.strings=c("NA",""))
+head(training)
+training <- training[,-(1:7)]
+testing <- testing[,-(1:7)]
+
+##Also get rid of NA's
+mostly_data<-apply(!is.na(training),2,sum)>19621
+training<-training[,mostly_data]
+testing<-testing[,mostly_data]
+dim(training)
+```
+
+Split the training set into two subsets:1) a reduced training set that will be used for training and cross-validation and 2) a validation data set that will be set aside and used to test the preformance of the model before applying it to the testing data set.
+
+```{r validation set, echo=TRUE, cache=TRUE, results='asis',include=TRUE}
+##create validation set from training set
+inTrain <- createDataPartition(y=training$classe,p=0.5, list=FALSE)
+training <- training[inTrain,]
+valid <- training[-inTrain,]
+```
+
+##Training Model using Random Forest
+
+I use the random forest method in the Caret package to train a predictive model using the reduced training set. Fivefold cross-validation is used on the reduced training set to estimate the out-of-sample error.
+
+```{r random forest,echo=TRUE, cache=TRUE, results='markup',include=TRUE}
+rf_model<-train(classe~.,data=training,method="rf",
+                trControl=trainControl(method="cv",number=5),
+                prox=TRUE,allowParallel=TRUE)
+print(rf_model)
+rf_model$finalModel
+```
+
+The resulting random forest training model has an out-of-bag (OOB) error rate of 1.19%. This, in turn, suggests that the estimated out-of-sample error, or test error, is 98.81%, a very high accuracy. Checking the random forest model on the validation set yields:
+
+```{r rf prediction results,echo=TRUE, cache=TRUE, results='markup',include=TRUE}
+rf_pred <- predict(rf_model, newdata=valid)
+confusionMatrix(rf_pred,valid$classe)
+```
+
+The resulting accuracy is 100% for prediction of the classe variable. Admittedly, this seems like the model is overfitting. However I have tried reducing the number of folds in the cross-validation as well as using no cross-validation, with identical results. 
+
+##Random Forest Prediction for Test Data Set 
+
+```{r rf test results,echo=TRUE, cache=TRUE, results='markup',include=TRUE}
+rf_testpred <- predict(rf_model, newdata=testing)
+print(rf_testpred)
+```
+
+##Discussion and Conclusion
+
+For this assignment, I employed the validation set approach by splitting the training data set into two subsets 1) a reduced training set (for model training) and 2) a validation set for assessing the performance of the models. Then, with these data sets, to apply various models to the data sets and assess their performance. Of all the methods tried, I found random forest with cross-validation to be the most accurate, yielding an out-of-bag error of 1.19% on the reduced training set and accuracy of 100% for the validation data set.   
+
+By contrast, a regular classification tree trained on the same reduced training set using method = 'rpart' as the cross-validated random forest, performed quite poorly on the validation set, yielding an accuracy of 47.86% (see Appendix)
+
+Taken together these results show random forest to be a very powerful method for predicting the quality of dumbbell lifting from accelerometer data. Two of the most important tradeoffs of random forest models are their difficulty to interpret the model and the danger of overfitting due to the high flexibility of the model which can result in very high variability in the out-of-sample testing error.
+
+## Appendix
+Classification tree prediction and validation for classe:
+
+```{r CART,echo=TRUE, cache=TRUE, results='markup',include=TRUE}
+rfit <-train(classe~.,data=training,method="rpart")
+rfit$finalModel
+```
+
+```{r CART prediction results,echo=TRUE, cache=TRUE, results='markup',include=TRUE}
+rfit_pred <- predict(rfit, newdata=valid)
+confusionMatrix(rfit_pred,valid$classe)
+```
+
